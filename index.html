@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira → Slack Announcer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f6f8;
+            color: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 40px 16px;
+        }
+
+        .container { width: 100%; max-width: 640px; }
+
+        h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+
+        .subtitle { color: #666; font-size: 0.95rem; margin-bottom: 32px; }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        .card-title {
+            font-size: 0.82rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #888;
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #555;
+            margin-bottom: 4px;
+        }
+
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1.5px solid #ddd;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+            margin-bottom: 14px;
+            font-family: inherit;
+            background: #fff;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #4a6cf7;
+        }
+
+        textarea { resize: vertical; min-height: 60px; }
+
+        .row { display: flex; gap: 12px; }
+        .row > * { flex: 1; }
+
+        /* ---------- collapsible settings ---------- */
+        .toggle-header {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: #4a6cf7;
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle-header:hover { color: #3451c7; }
+        .toggle-header .arrow { transition: transform 0.2s; font-size: 0.7rem; }
+        .toggle-header .arrow.open { transform: rotate(90deg); }
+        .collapsible { display: none; padding-top: 12px; }
+        .collapsible.open { display: block; }
+
+        .hint { font-size: 0.8rem; color: #999; margin-top: -8px; margin-bottom: 14px; }
+        .hint a { color: #4a6cf7; }
+
+        /* ---------- buttons ---------- */
+        .btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            font-family: inherit;
+        }
+        .btn:active { transform: scale(0.97); }
+
+        .btn-primary { background: #4a6cf7; color: #fff; width: 100%; }
+        .btn-primary:hover { background: #3a5ce5; }
+        .btn-primary:disabled { background: #a0b0f0; cursor: not-allowed; }
+
+        .btn-fetch {
+            background: #eef1ff;
+            color: #4a6cf7;
+            font-size: 0.85rem;
+            padding: 7px 14px;
+            margin-bottom: 14px;
+        }
+        .btn-fetch:hover { background: #dee3ff; }
+        .btn-fetch:disabled { color: #a0b0f0; cursor: not-allowed; }
+
+        .btn-copy {
+            background: #e8f5e9;
+            color: #2e7d32;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-copy:hover { background: #c8e6c9; }
+        .btn-copy.copied { background: #2e7d32; color: #fff; }
+
+        /* ---------- result ---------- */
+        .result-area { display: none; }
+        .result-area.visible { display: block; }
+
+        .message-box {
+            background: #f8f8fa;
+            border: 1.5px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            margin-bottom: 12px;
+            min-height: 60px;
+        }
+
+        .result-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .issue-badge { font-size: 0.8rem; color: #888; }
+
+        /* ---------- status messages ---------- */
+        .msg-box {
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+            margin-bottom: 14px;
+            display: none;
+        }
+        .msg-box.visible { display: block; }
+        .msg-box.error { background: #fff5f5; border: 1.5px solid #fecaca; color: #b91c1c; }
+        .msg-box.info  { background: #eff6ff; border: 1.5px solid #bfdbfe; color: #1e40af; }
+        .msg-box.success { background: #f0fdf4; border: 1.5px solid #bbf7d0; color: #166534; }
+
+        .spinner {
+            display: inline-block;
+            width: 14px; height: 14px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 4px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .or-divider {
+            text-align: center;
+            color: #aaa;
+            font-size: 0.8rem;
+            margin: 4px 0 14px;
+            position: relative;
+        }
+        .or-divider::before,
+        .or-divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 40%;
+            height: 1px;
+            background: #ddd;
+        }
+        .or-divider::before { left: 0; }
+        .or-divider::after { right: 0; }
+
+        .saved-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📣 Jira → Slack Announcer</h1>
+    <p class="subtitle">Turn Jira tickets into friendly product announcements — no server needed</p>
+
+    <!-- ===== Jira API Settings (optional) ===== -->
+    <div class="card">
+        <div class="toggle-header" onclick="toggle('apiSettings')">
+            <span class="arrow" id="apiSettingsArrow">▶</span>
+            Jira API Credentials <small style="color:#aaa; font-weight:400;">(optional — enables auto-fill)</small>
+            <span id="savedBadge"></span>
+        </div>
+        <div class="collapsible" id="apiSettings">
+            <label for="email">Email</label>
+            <input type="email" id="email" placeholder="you@company.com">
+
+            <label for="apiToken">API Token</label>
+            <input type="password" id="apiToken" placeholder="Paste your Jira API token">
+
+            <p class="hint">
+                Generate a token at
+                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">
+                    Atlassian → Security → API tokens</a>.
+                Credentials are saved in your browser only (localStorage).
+            </p>
+
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-fetch" onclick="saveCredentials()">💾 Save in Browser</button>
+                <button class="btn btn-fetch" style="color:#b91c1c; background:#fff5f5;" onclick="clearCredentials()">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Ticket Input ===== -->
+    <div class="card">
+        <div class="card-title">Ticket Details</div>
+
+        <label for="jiraUrl">Jira URL</label>
+        <input type="text" id="jiraUrl" placeholder="https://yoursite.atlassian.net/browse/PROJ-123">
+
+        <button class="btn btn-fetch" id="fetchBtn" onclick="fetchFromJira()">
+            ⚡ Auto-fill from Jira
+        </button>
+
+        <div class="msg-box" id="fetchMsg"></div>
+
+        <div class="or-divider">or fill in manually</div>
+
+        <label for="title">Title / Summary</label>
+        <input type="text" id="title" placeholder="e.g. Add dark mode to settings">
+
+        <div class="row">
+            <div>
+                <label for="issueType">Type</label>
+                <select id="issueType">
+                    <option value="story">✨ Feature / Story</option>
+                    <option value="improvement">🚀 Improvement</option>
+                    <option value="bug">🐛 Bug Fix</option>
+                    <option value="task" selected>✅ Task / Update</option>
+                    <option value="epic">📦 Epic / Initiative</option>
+                    <option value="change">🔄 Change</option>
+                </select>
+            </div>
+            <div>
+                <label for="status">Status</label>
+                <select id="status">
+                    <option value="">— optional —</option>
+                    <option value="Done">Done</option>
+                    <option value="Released">Released</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="In Review">In Review</option>
+                    <option value="To Do">To Do</option>
+                </select>
+            </div>
+        </div>
+
+        <label for="description">Brief Description <small style="color:#aaa;">(optional — keep it non-technical)</small></label>
+        <textarea id="description" rows="2" placeholder="e.g. Users can now switch to dark mode from the settings page"></textarea>
+
+        <label for="version">Version <small style="color:#aaa;">(optional)</small></label>
+        <input type="text" id="version" placeholder="e.g. v2.1.0">
+
+        <button class="btn btn-primary" id="generateBtn" onclick="generate()">
+            Generate Slack Message
+        </button>
+    </div>
+
+    <!-- ===== Result ===== -->
+    <div class="card result-area" id="resultArea">
+        <div class="card-title">Slack Message — ready to paste</div>
+        <div class="message-box" id="messageBox"></div>
+        <div class="result-footer">
+            <button class="btn btn-copy" id="copyBtn" onclick="copyMessage()">
+                📋 Copy to Clipboard
+            </button>
+            <span class="issue-badge" id="issueBadge"></span>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ───────── constants ───────── */
+const TYPE_MAP = {
+    bug:         { emoji: '🐛', label: 'Bug Fix' },
+    story:       { emoji: '✨', label: 'New Feature' },
+    task:        { emoji: '✅', label: 'Update' },
+    epic:        { emoji: '📦', label: 'New Initiative' },
+    improvement: { emoji: '🚀', label: 'Improvement' },
+    change:      { emoji: '🔄', label: 'Change' },
+    'new feature': { emoji: '✨', label: 'New Feature' },
+    'sub-task':  { emoji: '✅', label: 'Update' },
+    spike:       { emoji: '🔍', label: 'Research Update' },
+};
+const DEFAULT_TYPE = { emoji: '📣', label: 'Update' };
+
+let generatedMessage = '';
+
+/* ───────── init ───────── */
+(function init() {
+    const saved = loadCredentials();
+    if (saved.email || saved.token) {
+        document.getElementById('email').value = saved.email;
+        document.getElementById('apiToken').value = saved.token;
+        document.getElementById('savedBadge').innerHTML =
+            '<span class="saved-badge">✓ saved</span>';
+    }
+    document.getElementById('jiraUrl').focus();
+})();
+
+/* ───────── collapsible toggle ───────── */
+function toggle(id) {
+    const panel = document.getElementById(id);
+    const arrow = document.getElementById(id + 'Arrow');
+    panel.classList.toggle('open');
+    arrow.classList.toggle('open');
+}
+
+/* ───────── credentials (localStorage) ───────── */
+function saveCredentials() {
+    const email = document.getElementById('email').value.trim();
+    const token = document.getElementById('apiToken').value.trim();
+    localStorage.setItem('jira_email', email);
+    localStorage.setItem('jira_token', token);
+    document.getElementById('savedBadge').innerHTML =
+        '<span class="saved-badge">✓ saved</span>';
+}
+function clearCredentials() {
+    localStorage.removeItem('jira_email');
+    localStorage.removeItem('jira_token');
+    document.getElementById('email').value = '';
+    document.getElementById('apiToken').value = '';
+    document.getElementById('savedBadge').innerHTML = '';
+}
+function loadCredentials() {
+    return {
+        email: localStorage.getItem('jira_email') || '',
+        token: localStorage.getItem('jira_token') || '',
+    };
+}
+
+/* ───────── parse Jira URL ───────── */
+function parseJiraUrl(url) {
+    const m = url.match(/https?:\/\/([^/]+).*?([A-Z][A-Z0-9]+-\d+)/);
+    if (!m) return null;
+    return { domain: m[1], key: m[2] };
+}
+
+/* ───────── extract text from ADF (Atlassian Doc Format) ───────── */
+function extractAdfText(node) {
+    if (!node) return '';
+    if (typeof node === 'string') return node;
+    let t = '';
+    if (node.type === 'text') t += node.text || '';
+    (node.content || []).forEach(c => { t += extractAdfText(c); });
+    return t;
+}
+
+/* ───────── fetch from Jira API ───────── */
+async function fetchFromJira() {
+    const url = document.getElementById('jiraUrl').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const token = document.getElementById('apiToken').value.trim();
+    const msgEl = document.getElementById('fetchMsg');
+    const btn = document.getElementById('fetchBtn');
+
+    msgEl.className = 'msg-box'; // reset
+
+    if (!url) { showFetchMsg('Paste a Jira URL first.', 'error'); return; }
+    const parsed = parseJiraUrl(url);
+    if (!parsed) { showFetchMsg('Could not find an issue key in that URL.', 'error'); return; }
+    if (!email || !token) {
+        showFetchMsg('Open Jira API Credentials above and add your email + API token.', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Fetching…';
+
+    const apiUrl = `https://${parsed.domain}/rest/api/3/issue/${parsed.key}?fields=summary,issuetype,status,description,fixVersions`;
+
+    try {
+        const resp = await fetch(apiUrl, {
+            headers: { 'Authorization': 'Basic ' + btoa(email + ':' + token), 'Accept': 'application/json' },
+        });
+        if (!resp.ok) {
+            const code = resp.status;
+            if (code === 401) throw new Error('Auth failed — check your email and API token.');
+            if (code === 404) throw new Error(`Issue ${parsed.key} not found.`);
+            throw new Error(`Jira returned ${code}.`);
+        }
+        const data = await resp.json();
+        fillFieldsFromApi(data, parsed.key);
+        showFetchMsg(`Filled from ${parsed.key} ✓`, 'success');
+
+    } catch (err) {
+        if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+            showFetchMsg(
+                'Request blocked by the browser (CORS). You can install a CORS browser extension (e.g. "Allow CORS") or fill in the fields manually below.',
+                'info'
+            );
+        } else {
+            showFetchMsg(err.message, 'error');
+        }
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '⚡ Auto-fill from Jira';
+    }
+}
+
+function showFetchMsg(text, type) {
+    const el = document.getElementById('fetchMsg');
+    el.textContent = text;
+    el.className = `msg-box ${type} visible`;
+}
+
+function fillFieldsFromApi(data, key) {
+    const f = data.fields || {};
+    document.getElementById('title').value = f.summary || '';
+
+    const typeName = (f.issuetype?.name || '').toLowerCase();
+    const sel = document.getElementById('issueType');
+    for (const opt of sel.options) {
+        if (opt.value === typeName) { sel.value = typeName; break; }
+    }
+    // Map common Jira types to our dropdown
+    if (['story', 'new feature'].includes(typeName)) sel.value = 'story';
+    else if (typeName === 'bug') sel.value = 'bug';
+    else if (typeName === 'epic') sel.value = 'epic';
+    else if (typeName === 'improvement') sel.value = 'improvement';
+    else if (['task', 'sub-task'].includes(typeName)) sel.value = 'task';
+
+    const statusName = f.status?.name || '';
+    const statusSel = document.getElementById('status');
+    let statusMatched = false;
+    for (const opt of statusSel.options) {
+        if (opt.value.toLowerCase() === statusName.toLowerCase()) {
+            statusSel.value = opt.value;
+            statusMatched = true;
+            break;
+        }
+    }
+    if (!statusMatched && statusName) {
+        const opt = document.createElement('option');
+        opt.value = statusName;
+        opt.textContent = statusName;
+        statusSel.appendChild(opt);
+        statusSel.value = statusName;
+    }
+
+    const desc = extractAdfText(f.description).trim();
+    if (desc) {
+        // Take first sentence, cap at 200 chars
+        let brief = desc.split(/(?<=[.!?])\s/)[0];
+        if (brief.length > 200) brief = brief.substring(0, 197).replace(/\s+\S*$/, '') + '…';
+        document.getElementById('description').value = brief;
+    }
+
+    const versions = (f.fixVersions || []).map(v => v.name).filter(Boolean).join(', ');
+    document.getElementById('version').value = versions;
+}
+
+/* ───────── generate Slack message ───────── */
+function generate() {
+    const title = document.getElementById('title').value.trim();
+    const typeKey = document.getElementById('issueType').value;
+    const status = document.getElementById('status').value;
+    const description = document.getElementById('description').value.trim();
+    const version = document.getElementById('version').value.trim();
+    const jiraUrl = document.getElementById('jiraUrl').value.trim();
+
+    if (!title) {
+        showFetchMsg('Please enter a title / summary.', 'error');
+        return;
+    }
+
+    const typeInfo = TYPE_MAP[typeKey] || DEFAULT_TYPE;
+    const lines = [];
+
+    lines.push(`${typeInfo.emoji} *${typeInfo.label}: ${title}*`);
+    lines.push('');
+
+    if (description) {
+        lines.push(description);
+        lines.push('');
+    }
+
+    if (status) {
+        const done = ['done', 'closed', 'resolved', 'released'].includes(status.toLowerCase());
+        lines.push(`${done ? '🟢' : '🔹'} *Status:* ${status}`);
+    }
+
+    if (version) {
+        lines.push(`🏷️ *Version:* ${version}`);
+    }
+
+    if (jiraUrl) {
+        lines.push('');
+        lines.push(`🔗 <${jiraUrl}|View in Jira>`);
+    }
+
+    generatedMessage = lines.join('\n');
+
+    const parsed = parseJiraUrl(jiraUrl);
+
+    document.getElementById('messageBox').textContent = generatedMessage;
+    document.getElementById('issueBadge').textContent =
+        parsed ? `${parsed.key} · ${typeInfo.label}` : typeInfo.label;
+    document.getElementById('resultArea').classList.add('visible');
+    resetCopyBtn();
+    document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ───────── copy ───────── */
+function copyMessage() {
+    const btn = document.getElementById('copyBtn');
+    navigator.clipboard.writeText(generatedMessage).then(() => {
+        btn.classList.add('copied');
+        btn.innerHTML = '✅ Copied!';
+        setTimeout(resetCopyBtn, 2000);
+    }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = generatedMessage;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.classList.add('copied');
+        btn.innerHTML = '✅ Copied!';
+        setTimeout(resetCopyBtn, 2000);
+    });
+}
+
+function resetCopyBtn() {
+    const btn = document.getElementById('copyBtn');
+    btn.classList.remove('copied');
+    btn.innerHTML = '📋 Copy to Clipboard';
+}
+
+/* ───────── keyboard shortcut ───────── */
+document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') generate();
+});
+</script>
+</body>
+</html>
