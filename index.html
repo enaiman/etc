@@ -208,6 +208,62 @@
             border-radius: 4px;
             margin-left: 6px;
         }
+
+        /* ---------- curl fallback ---------- */
+        .curl-fallback { display: none; }
+        .curl-fallback.visible { display: block; }
+
+        .curl-box {
+            background: #1e1e2e;
+            color: #cdd6f4;
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-bottom: 10px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        .curl-fallback .step {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #555;
+            margin: 12px 0 6px;
+        }
+
+        .curl-fallback .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4a6cf7;
+            color: #fff;
+            font-size: 0.7rem;
+            margin-right: 6px;
+        }
+
+        .btn-curl-copy {
+            background: #313244;
+            color: #cdd6f4;
+            font-size: 0.8rem;
+            padding: 6px 12px;
+        }
+        .btn-curl-copy:hover { background: #45475a; }
+        .btn-curl-copy.copied { background: #2e7d32; color: #fff; }
+
+        .btn-parse {
+            background: #4a6cf7;
+            color: #fff;
+            font-size: 0.85rem;
+            padding: 8px 16px;
+        }
+        .btn-parse:hover { background: #3a5ce5; }
     </style>
 </head>
 <body>
@@ -255,6 +311,17 @@
         </button>
 
         <div class="msg-box" id="fetchMsg"></div>
+
+        <!-- Curl fallback (shown when CORS blocks the request) -->
+        <div class="curl-fallback" id="curlFallback">
+            <p class="step"><span class="step-num">1</span> Copy this command and run it in your terminal:</p>
+            <div class="curl-box" id="curlCommand"></div>
+            <button class="btn btn-curl-copy" id="curlCopyBtn" onclick="copyCurl()">📋 Copy command</button>
+
+            <p class="step"><span class="step-num">2</span> Paste the JSON output here:</p>
+            <textarea id="jsonInput" rows="4" placeholder='Paste the JSON output from the curl command here...'></textarea>
+            <button class="btn btn-parse" onclick="parseJsonInput()">Parse &amp; Fill Fields</button>
+        </div>
 
         <div class="or-divider">or fill in manually</div>
 
@@ -425,11 +492,8 @@ async function fetchFromJira() {
         showFetchMsg(`Filled from ${parsed.key} ✓`, 'success');
 
     } catch (err) {
-        if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
-            showFetchMsg(
-                'Request blocked by the browser (CORS). You can install a CORS browser extension (e.g. "Allow CORS") or fill in the fields manually below.',
-                'info'
-            );
+        if (err.name === 'TypeError') {
+            showCurlFallback(apiUrl, email, token);
         } else {
             showFetchMsg(err.message, 'error');
         }
@@ -443,6 +507,41 @@ function showFetchMsg(text, type) {
     const el = document.getElementById('fetchMsg');
     el.textContent = text;
     el.className = `msg-box ${type} visible`;
+    if (type !== 'info') document.getElementById('curlFallback').classList.remove('visible');
+}
+
+function showCurlFallback(apiUrl, email, token) {
+    showFetchMsg('Browser blocked the request (CORS). Use the terminal shortcut below instead — takes 10 seconds.', 'info');
+    const creds = btoa(email + ':' + token);
+    const curl = `curl -s -H "Authorization: Basic ${creds}" -H "Accept: application/json" "${apiUrl}"`;
+    document.getElementById('curlCommand').textContent = curl;
+    document.getElementById('jsonInput').value = '';
+    document.getElementById('curlFallback').classList.add('visible');
+}
+
+function copyCurl() {
+    const text = document.getElementById('curlCommand').textContent;
+    const btn = document.getElementById('curlCopyBtn');
+    navigator.clipboard.writeText(text).then(() => {
+        btn.classList.add('copied');
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '📋 Copy command'; }, 2000);
+    });
+}
+
+function parseJsonInput() {
+    const raw = document.getElementById('jsonInput').value.trim();
+    if (!raw) { showFetchMsg('Paste the JSON output first.', 'error'); return; }
+    try {
+        const data = JSON.parse(raw);
+        if (!data.fields) throw new Error('Not a Jira issue response (missing "fields").');
+        const parsed = parseJiraUrl(document.getElementById('jiraUrl').value);
+        fillFieldsFromApi(data, parsed?.key || data.key || '');
+        showFetchMsg(`Fields filled from JSON ✓`, 'success');
+        document.getElementById('curlFallback').classList.remove('visible');
+    } catch (e) {
+        showFetchMsg(`Invalid JSON: ${e.message}`, 'error');
+    }
 }
 
 function fillFieldsFromApi(data, key) {
